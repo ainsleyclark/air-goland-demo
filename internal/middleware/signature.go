@@ -22,10 +22,8 @@ const (
 	tolerance    = 5 * time.Minute
 )
 
-// VerifySignature rejects requests whose SignatureHeader is not
-// "t=<unix>,v1=<signature>", where the signature is the hex HMAC-SHA256 of
-// "<t>.<body>" keyed with secret, or whose timestamp is more than five
-// minutes old. Accepted requests reach next with their body intact.
+// VerifySignature rejects requests that aren't signed with secret or are
+// more than five minutes old.
 func VerifySignature(secret []byte, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
