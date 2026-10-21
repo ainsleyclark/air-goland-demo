@@ -9,6 +9,8 @@ import (
 	"github.com/ainsleyclark/hookrelay/internal/store"
 )
 
+const maxBodyBytes = 1 << 20
+
 // Handler receives webhook events and saves them to a Store.
 type Handler struct {
 	store store.Store
@@ -21,7 +23,8 @@ func NewHandler(s store.Store) *Handler {
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var ev store.Event
-	if err := json.NewDecoder(r.Body).Decode(&ev); err != nil {
+	body := http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	if err := json.NewDecoder(body).Decode(&ev); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

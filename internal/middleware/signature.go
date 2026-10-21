@@ -17,7 +17,10 @@ import (
 // the hex HMAC-SHA256 of "<t>.<body>".
 const SignatureHeader = "Webhook-Signature"
 
-const tolerance = 5 * time.Minute
+const (
+	tolerance    = 5 * time.Minute
+	maxBodyBytes = 1 << 20
+)
 
 var errMalformedHeader = errors.New("malformed signature header")
 
@@ -25,7 +28,7 @@ var errMalformedHeader = errors.New("malformed signature header")
 // with secret, or whose timestamp is older than five minutes.
 func VerifySignature(secret []byte, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
