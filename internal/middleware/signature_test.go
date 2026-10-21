@@ -55,7 +55,7 @@ func TestVerifySignature(t *testing.T) {
 			req.Header.Set(SignatureHeader, tt.header)
 			rec := httptest.NewRecorder()
 
-			VerifySignature(HMACVerifier{Secret: testSecret}, next).ServeHTTP(rec, req)
+			VerifySignature(testSecret, next).ServeHTTP(rec, req)
 
 			if rec.Code != tt.code {
 				t.Errorf("status = %d, want %d", rec.Code, tt.code)

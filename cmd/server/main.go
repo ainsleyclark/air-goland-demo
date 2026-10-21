@@ -22,7 +22,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":8080",
-		Handler:           routes(store.NewMemory(), middleware.HMACVerifier{Secret: []byte(secret)}),
+		Handler:           routes(store.NewMemory(), []byte(secret)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -30,8 +30,8 @@ func main() {
 	log.Fatal(srv.ListenAndServe())
 }
 
-func routes(st store.Store, v middleware.Verifier) http.Handler {
+func routes(st store.Store, secret []byte) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("POST /webhooks/{provider}", middleware.VerifySignature(v, webhook.NewHandler(st)))
+	mux.Handle("POST /webhooks/{provider}", middleware.VerifySignature(secret, webhook.NewHandler(st)))
 	return mux
 }

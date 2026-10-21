@@ -2,25 +2,31 @@ package middleware
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 // SignatureHeader is the request header that carries the webhook signature.
 const SignatureHeader = "Webhook-Signature"
 
-const maxBodyBytes = 1 << 20
+const (
+	maxBodyBytes = 1 << 20
+	tolerance    = 5 * time.Minute
+)
 
-// Verifier checks a signature header against the raw request body.
-type Verifier interface {
-	Verify(header string, body []byte) error
-}
-
-// VerifySignature rejects requests whose SignatureHeader is not accepted
-// by v. Accepted requests reach next with their body intact.
-func VerifySignature(v Verifier, next http.Handler) http.Handler {
+// VerifySignature rejects requests whose SignatureHeader is not
+// "t=<unix>,v1=<signature>", where the signature is the hex HMAC-SHA256 of
+// "<t>.<body>" keyed with secret, or whose timestamp is more than five
+// minutes old. Accepted requests reach next with their body intact.
+func VerifySignature(secret []byte, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 		if err != nil {
@@ -32,7 +38,7 @@ func VerifySignature(v Verifier, next http.Handler) http.Handler {
 			}
 			return
 		}
-		if err := v.Verify(r.Header.Get(SignatureHeader), body); err != nil {
+		if err := verify(secret, r.Header.Get(SignatureHeader), body); err != nil {
 			slog.WarnContext(r.Context(), "rejected webhook signature", "error", err)
 			http.Error(w, "invalid signature", http.StatusUnauthorized)
 			return
@@ -41,4 +47,24 @@ func VerifySignature(v Verifier, next http.Handler) http.Handler {
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		next.ServeHTTP(w, r)
 	})
+}
+
+func verify(secret []byte, header string, body []byte) error {
+	var ts int64
+	var sig string
+	if _, err := fmt.Sscanf(header, "t=%d,v1=%s", &ts, &sig); err != nil {
+		return fmt.Errorf("parsing header: %w", err)
+	}
+	if time.Since(time.Unix(ts, 0)) > tolerance {
+		return errors.New("signature expired")
+	}
+
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(strconv.FormatInt(ts, 10) + "."))
+	mac.Write(body)
+	if !hmac.Equal([]byte(sig), []byte(hex.EncodeToString(mac.Sum(nil)))) {
+		return errors.New("signature mismatch")
+	}
+
+	return nil
 }

@@ -33,7 +33,7 @@ A pre-request script signs each request with the `secret` from `requests/http-cl
 ### Signature format
 
 ```
-Webhook-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">
+Webhook-Signature: t=<unix seconds>,v1=<lowercase hex HMAC-SHA256 of "<t>.<body>">
 ```
 
 Requests with a timestamp older than five minutes are rejected.
@@ -80,5 +80,3 @@ Run `git checkout <commit>` to go back to any of these states:
 | The middleware reads the body with `io.ReadAll` and doesn't put it back. After the merge, the valid request returns `400 EOF`, but `go test ./...` still passes because the middleware tests use a `next` handler that never reads the body. | `089519c`, visible at `71598b6` | Debugger | `f1f9324`: restore `r.Body` before calling `next` |
 | The middleware compares signatures with `==`, which isn't constant time. | `089519c` | Code Review | `41118f1`: decode the hex signature and compare with `hmac.Equal` |
 | The handler and middleware send raw Go errors to the client, such as JSON decode errors and `EOF`, and log nothing. | `c2aed50`, `089519c` | Code Review | `942e021`: log the error with `slog` and respond with a fixed message |
-
-After the fixes, `fb6935c` moves signature checking behind a `Verifier` interface with one HMAC implementation, and `b56c2dc` adds an end-to-end test that posts a signed event twice through the middleware.
