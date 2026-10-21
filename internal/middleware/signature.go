@@ -26,6 +26,8 @@ const (
 // more than five minutes old.
 func VerifySignature(secret []byte, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 		if err != nil {
 			slog.WarnContext(r.Context(), "reading webhook body", "error", err)
@@ -36,8 +38,9 @@ func VerifySignature(secret []byte, next http.Handler) http.Handler {
 			}
 			return
 		}
-		if err := verify(secret, r.Header.Get(SignatureHeader), body); err != nil {
-			slog.WarnContext(r.Context(), "rejected webhook signature", "error", err)
+
+		if err = verify(secret, r.Header.Get(SignatureHeader), body); err != nil {
+			slog.WarnContext(ctx, "rejected webhook signature", "error", err)
 			http.Error(w, "invalid signature", http.StatusUnauthorized)
 			return
 		}
