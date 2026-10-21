@@ -1,4 +1,3 @@
-// Package store persists webhook events.
 package store
 
 import (

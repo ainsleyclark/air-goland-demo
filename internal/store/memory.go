@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-// Memory is an in-memory Store. It is safe for concurrent use.
+// Memory is an in-memory Store; safe for concurrent use.
 type Memory struct {
 	mu     sync.Mutex
 	events map[string]Event
@@ -26,6 +26,7 @@ func (m *Memory) Get(_ context.Context, id string) (Event, error) {
 	if !ok {
 		return Event{}, ErrNotFound
 	}
+
 	return ev, nil
 }
 
@@ -37,5 +38,6 @@ func (m *Memory) Save(_ context.Context, ev Event) error {
 		return ErrDuplicate
 	}
 	m.events[ev.ID] = ev
+
 	return nil
 }
