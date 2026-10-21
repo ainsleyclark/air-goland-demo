@@ -15,7 +15,7 @@ import (
 
 func readEvent(t *testing.T, name string) []byte {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join("..", "..", "testdata", "events", name))
+	body, err := os.ReadFile(filepath.Join("testdata", "events", name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestHandler_Duplicate(t *testing.T) {
 }
 
 func TestHandler_InvalidID(t *testing.T) {
-	rec := post(NewHandler(store.NewMemory()), readEvent(t, "invalid_id.json"))
+	rec := post(NewHandler(store.NewMemory()), readEvent(t, " invalid_id.json"))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
