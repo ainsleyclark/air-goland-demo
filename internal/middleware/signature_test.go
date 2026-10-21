@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -39,21 +40,23 @@ func TestVerifySignature(t *testing.T) {
 		{"missing header", "", body, http.StatusUnauthorized},
 	}
 
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	h := VerifySignature(testSecret, next)
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var got []byte
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got, _ = io.ReadAll(r.Body)
+			})
 			req := httptest.NewRequest(http.MethodPost, "/webhooks/stripe", strings.NewReader(tt.body))
 			req.Header.Set(SignatureHeader, tt.header)
 			rec := httptest.NewRecorder()
 
-			h.ServeHTTP(rec, req)
+			VerifySignature(testSecret, next).ServeHTTP(rec, req)
 
 			if rec.Code != tt.want {
 				t.Errorf("status = %d, want %d", rec.Code, tt.want)
+			}
+			if tt.want == http.StatusOK && string(got) != tt.body {
+				t.Errorf("next read body %q, want %q", got, tt.body)
 			}
 		})
 	}

@@ -2,6 +2,7 @@
 package middleware
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -48,6 +49,7 @@ func VerifySignature(secret []byte, next http.Handler) http.Handler {
 			return
 		}
 
+		r.Body = io.NopCloser(bytes.NewReader(body))
 		next.ServeHTTP(w, r)
 	})
 }
