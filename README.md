@@ -1,2 +1,2 @@
-'m# air-goland-demo
+# Air -> GoLand Demo
 A demo of Air in GoLand
