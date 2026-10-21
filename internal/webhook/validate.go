@@ -5,9 +5,10 @@ import (
 	"regexp"
 )
 
+var eventIDPattern = regexp.MustCompile("^evt_[A-Za-z0-9]{24}$")
+
 func validateEventID(id string) error {
-	re := regexp.MustCompile("^evt_[A-Za-z0-9]{24}$")
-	if !re.MatchString(id) {
+	if !eventIDPattern.MatchString(id) {
 		return fmt.Errorf("invalid event id %q", id)
 	}
 	return nil
