@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var testSecret = []byte("test-secret")
@@ -23,49 +26,81 @@ func signHeader(secret []byte, ts int64, body string) string {
 }
 
 func TestVerifySignature(t *testing.T) {
+	t.Parallel()
+
 	const (
 		body     = `{"id": "evt_1A2b3C4d5E6f7G8h9I0jK1lM", "type": "payment.succeeded"}`
 		rejected = "invalid signature"
 	)
 	now := time.Now().Unix()
 
-	tests := []struct {
-		name   string
-		header string
-		body   string
-		code   int
-		msg    string
-	}{
-		{"valid", signHeader(testSecret, now, body), body, http.StatusOK, ""},
-		{"tampered body", signHeader(testSecret, now, body), body + " ", http.StatusUnauthorized, rejected},
-		{"wrong secret", signHeader([]byte("other"), now, body), body, http.StatusUnauthorized, rejected},
-		{"expired", signHeader(testSecret, now-600, body), body, http.StatusUnauthorized, rejected},
-		{"malformed header", "v1=abc", body, http.StatusUnauthorized, rejected},
-		{"missing header", "", body, http.StatusUnauthorized, rejected},
-		{"too large", "", strings.Repeat("a", maxBodyBytes+1), http.StatusRequestEntityTooLarge, "request body too large"},
+	type response struct {
+		code int
+		msg  string
+		next string
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var got []byte
-			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				got, _ = io.ReadAll(r.Body)
+	tt := map[string]struct {
+		header string
+		body   string
+		want   response
+	}{
+		"Valid signature": {
+			header: signHeader(testSecret, now, body),
+			body:   body,
+			want:   response{code: http.StatusOK, next: body},
+		},
+		"Tampered body": {
+			header: signHeader(testSecret, now, body),
+			body:   body + " ",
+			want:   response{code: http.StatusUnauthorized, msg: rejected},
+		},
+		"Wrong secret": {
+			header: signHeader([]byte("other"), now, body),
+			body:   body,
+			want:   response{code: http.StatusUnauthorized, msg: rejected},
+		},
+		"Expired timestamp": {
+			header: signHeader(testSecret, now-600, body),
+			body:   body,
+			want:   response{code: http.StatusUnauthorized, msg: rejected},
+		},
+		"Malformed header": {
+			header: "v1=abc",
+			body:   body,
+			want:   response{code: http.StatusUnauthorized, msg: rejected},
+		},
+		"Missing header": {
+			header: "",
+			body:   body,
+			want:   response{code: http.StatusUnauthorized, msg: rejected},
+		},
+		"Body too large": {
+			header: "",
+			body:   strings.Repeat("a", maxBodyBytes+1),
+			want:   response{code: http.StatusRequestEntityTooLarge, msg: "request body too large"},
+		},
+	}
+
+	for name, test := range tt {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var got response
+			next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				read, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				got.next = string(read)
 			})
-			req := httptest.NewRequest(http.MethodPost, "/webhooks/stripe", strings.NewReader(tt.body))
-			req.Header.Set(SignatureHeader, tt.header)
+			req := httptest.NewRequest(http.MethodPost, "/webhooks/stripe", strings.NewReader(test.body))
+			req.Header.Set(SignatureHeader, test.header)
 			rec := httptest.NewRecorder()
 
 			VerifySignature(testSecret, next).ServeHTTP(rec, req)
 
-			if rec.Code != tt.code {
-				t.Errorf("status = %d, want %d", rec.Code, tt.code)
-			}
-			if msg := strings.TrimSpace(rec.Body.String()); msg != tt.msg {
-				t.Errorf("response = %q, want %q", msg, tt.msg)
-			}
-			if tt.code == http.StatusOK && string(got) != tt.body {
-				t.Errorf("next read body %q, want %q", got, tt.body)
-			}
+			got.code = rec.Code
+			got.msg = strings.TrimSpace(rec.Body.String())
+			assert.Equal(t, test.want, got)
 		})
 	}
 }

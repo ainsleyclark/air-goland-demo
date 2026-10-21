@@ -18,6 +18,7 @@ func NewMemory() *Memory {
 	return &Memory{events: make(map[string]Event)}
 }
 
+// Get returns the event with the given ID, or ErrNotFound.
 func (m *Memory) Get(_ context.Context, id string) (Event, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -30,6 +31,7 @@ func (m *Memory) Get(_ context.Context, id string) (Event, error) {
 	return ev, nil
 }
 
+// Save stores ev under its ID, or returns ErrDuplicate if the ID exists.
 func (m *Memory) Save(_ context.Context, ev Event) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

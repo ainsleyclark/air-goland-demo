@@ -10,15 +10,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/ainsleyclark/hookrelay/internal/store"
 )
 
+func setup(t *testing.T) (*Handler, *store.Memory) {
+	t.Helper()
+
+	st := store.NewMemory()
+	return NewHandler(st), st
+}
+
 func readEvent(t *testing.T, name string) []byte {
 	t.Helper()
+
 	body, err := os.ReadFile(filepath.Join("testdata", "events", name))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return body
 }
 
@@ -30,66 +39,74 @@ func post(h http.Handler, body []byte) *httptest.ResponseRecorder {
 	return rec
 }
 
-func TestHandler_ValidEvent(t *testing.T) {
-	st := store.NewMemory()
+func TestHandler_ServeHTTP(t *testing.T) {
+	t.Parallel()
 
-	rec := post(NewHandler(st), readEvent(t, "payment_succeeded.json"))
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusAccepted)
-	}
+	t.Run("New event saved", func(t *testing.T) {
+		t.Parallel()
 
-	ev, err := st.Get(t.Context(), "evt_1A2b3C4d5E6f7G8h9I0jK1lM")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ev.Provider != "stripe" {
-		t.Errorf("provider = %q, want %q", ev.Provider, "stripe")
-	}
-}
+		h, st := setup(t)
+		rec := post(h, readEvent(t, "payment_succeeded.json"))
+		require.Equal(t, http.StatusAccepted, rec.Code)
 
-func TestHandler_Duplicate(t *testing.T) {
-	h := NewHandler(store.NewMemory())
-	body := readEvent(t, "payment_succeeded.json")
+		got, err := st.Get(t.Context(), "evt_1A2b3C4d5E6f7G8h9I0jK1lM")
+		require.NoError(t, err)
+		assert.Equal(t, "stripe", got.Provider)
+	})
 
-	post(h, body)
-	if rec := post(h, body); rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-}
+	t.Run("Duplicate event acknowledged", func(t *testing.T) {
+		t.Parallel()
 
-func TestHandler_InvalidID(t *testing.T) {
-	rec := post(NewHandler(store.NewMemory()), readEvent(t, " invalid_id.json"))
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-	}
-}
+		h, _ := setup(t)
+		body := readEvent(t, "payment_succeeded.json")
+		require.Equal(t, http.StatusAccepted, post(h, body).Code)
 
-func TestHandler_BadBody(t *testing.T) {
-	huge := `{"id": "` + strings.Repeat("a", maxBodyBytes) + `"}`
+		rec := post(h, body)
+		assert.Equal(t, http.StatusOK, rec.Code)
+	})
 
-	tests := []struct {
-		name string
-		body string
-		code int
-		msg  string
-	}{
-		{"malformed", `{"id":`, http.StatusBadRequest, "invalid JSON body"},
-		{"empty", "", http.StatusBadRequest, "invalid JSON body"},
-		{"too large", huge, http.StatusRequestEntityTooLarge, "request body too large"},
-	}
+	t.Run("Bad requests rejected", func(t *testing.T) {
+		t.Parallel()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rec := post(NewHandler(store.NewMemory()), []byte(tt.body))
+		type response struct {
+			code int
+			msg  string
+		}
 
-			if rec.Code != tt.code {
-				t.Errorf("status = %d, want %d", rec.Code, tt.code)
-			}
-			if got := strings.TrimSpace(rec.Body.String()); got != tt.msg {
-				t.Errorf("body = %q, want %q", got, tt.msg)
-			}
-		})
-	}
+		tt := map[string]struct {
+			input []byte
+			want  response
+		}{
+			"Invalid event ID": {
+				input: readEvent(t, "invalid_id.json"),
+				want:  response{code: http.StatusBadRequest, msg: `invalid event id "evt_123"`},
+			},
+			"Malformed JSON": {
+				input: []byte(`{"id":`),
+				want:  response{code: http.StatusBadRequest, msg: "invalid JSON body"},
+			},
+			"Empty body": {
+				input: []byte(""),
+				want:  response{code: http.StatusBadRequest, msg: "invalid JSON body"},
+			},
+			"Body too large": {
+				input: []byte(`{"id": "` + strings.Repeat("a", maxBodyBytes) + `"}`),
+				want:  response{code: http.StatusRequestEntityTooLarge, msg: "request body too large"},
+			},
+		}
+
+		for name, test := range tt {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+
+				h, _ := setup(t)
+				rec := post(h, test.input)
+
+				got := response{code: rec.Code, msg: strings.TrimSpace(rec.Body.String())}
+				assert.Equal(t, test.want, got)
+			})
+		}
+	})
 }
 
 func BenchmarkHandler(b *testing.B) {

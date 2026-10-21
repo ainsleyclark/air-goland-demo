@@ -21,6 +21,8 @@ func NewHandler(s store.Store) *Handler {
 	return &Handler{store: s}
 }
 
+// ServeHTTP decodes the event in the request body and saves it, replying
+// 202 Accepted for a new event and 200 OK for a redelivery.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var ev store.Event
 	body := http.MaxBytesReader(w, r.Body, maxBodyBytes)
