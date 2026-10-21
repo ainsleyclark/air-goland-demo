@@ -89,10 +89,6 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				input: []byte(""),
 				want:  response{code: http.StatusBadRequest, msg: "invalid JSON body"},
 			},
-			"Body too large": {
-				input: []byte(`{"id": "` + strings.Repeat("a", maxBodyBytes) + `"}`),
-				want:  response{code: http.StatusRequestEntityTooLarge, msg: "request body too large"},
-			},
 		}
 
 		for name, test := range tt {

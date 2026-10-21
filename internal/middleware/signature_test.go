@@ -4,7 +4,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var testSecret = []byte("test-secret")
@@ -37,7 +35,6 @@ func TestVerifySignature(t *testing.T) {
 	type response struct {
 		code int
 		msg  string
-		next string
 	}
 
 	tt := map[string]struct {
@@ -48,7 +45,7 @@ func TestVerifySignature(t *testing.T) {
 		"Valid signature": {
 			header: signHeader(testSecret, now, body),
 			body:   body,
-			want:   response{code: http.StatusOK, next: body},
+			want:   response{code: http.StatusOK},
 		},
 		"Tampered body": {
 			header: signHeader(testSecret, now, body),
@@ -75,22 +72,16 @@ func TestVerifySignature(t *testing.T) {
 			body:   body,
 			want:   response{code: http.StatusUnauthorized, msg: rejected},
 		},
-		"Body too large": {
-			header: "",
-			body:   strings.Repeat("a", maxBodyBytes+1),
-			want:   response{code: http.StatusRequestEntityTooLarge, msg: "request body too large"},
-		},
 	}
 
 	for name, test := range tt {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			var got response
-			next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-				read, err := io.ReadAll(r.Body)
-				require.NoError(t, err)
-				got.next = string(read)
+			// ISSUE: 	next never reads the body, so these tests pass even though the real handler receives an empty one.
+			// FIX: 	Debugger Skill should make next read r.Body and assert it matches the request body.
+			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
 			})
 			req := httptest.NewRequest(http.MethodPost, "/webhooks/stripe", strings.NewReader(test.body))
 			req.Header.Set(SignatureHeader, test.header)
@@ -98,8 +89,7 @@ func TestVerifySignature(t *testing.T) {
 
 			VerifySignature(testSecret, next).ServeHTTP(rec, req)
 
-			got.code = rec.Code
-			got.msg = strings.TrimSpace(rec.Body.String())
+			got := response{code: rec.Code, msg: strings.TrimSpace(rec.Body.String())}
 			assert.Equal(t, test.want, got)
 		})
 	}

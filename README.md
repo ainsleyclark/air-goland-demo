@@ -3,24 +3,25 @@
 A small Go service that receives signed payment webhooks and stores each event once.
 It's the demo project for a GoLand blog post about Air and the 2026.3 IDE skills.
 
-Standard library only. Requires Go 1.27.3 or later.
+Standard library only, plus testify in the tests. Requires Go 1.27.3 or later.
 
 ## Run the service
 
 ```sh
-go run ./cmd/server
+go run .
 ```
 
 The server listens on `:8080` and accepts `POST /webhooks/{provider}`.
 Requests must carry a `Webhook-Signature` header signed with `WEBHOOK_SECRET`. If the variable isn't set, the server uses `dev-secret`.
 
 ```sh
-WEBHOOK_SECRET=my-secret go run ./cmd/server
+WEBHOOK_SECRET=my-secret go run .
 ```
 
 ### Send requests from GoLand
 
-Open `requests/webhooks.http`, select the `dev` environment, and run the requests:
+Open `requests/webhooks.http`, select the `dev` environment, and run the requests.
+While the [demo issues](#demo-issues) are in place, the valid and duplicate requests return `400 invalid JSON body`. Once they're fixed you should see:
 
 | Request | Expected response |
 |---|---|
@@ -40,7 +41,7 @@ Requests with a timestamp older than five minutes are rejected.
 
 ### Errors
 
-Error responses carry a short, fixed message such as `invalid JSON body` or `invalid signature`. The underlying error is logged with `log/slog` and never sent to the client. Bodies larger than 1 MiB get `413 Request Entity Too Large`.
+Error responses carry a short, fixed message such as `invalid JSON body` or `invalid signature`. The underlying error is logged with `log/slog` and never sent to the client.
 
 ## Run the tests
 
@@ -59,24 +60,20 @@ go tool pprof -top -cum cpu.out
 
 In GoLand, click the gutter icon next to `BenchmarkHandler` and choose **Profile with CPU Profiler**.
 
-## Demo history
+## Demo issues
 
-The blog post walks through the history of `main`. Two agent commits add the handler and the middleware with deliberate issues, a merge brings them together, and later commits fix each issue. The code has no comments pointing at the issues.
+The code contains deliberate issues for the demo. Each one is marked with an `// ISSUE:` comment that describes it and a `// FIX:` comment that says what should fix it. List them with:
 
-Run `git checkout <commit>` to go back to any of these states:
+```sh
+grep -rn "ISSUE:" --include='*.go' .
+```
 
-| Commit | State |
-|---|---|
-| `b98784a` | Baseline: store, `validateEventID`, and a route stub that returns `501` |
-| `c2aed50` | Agent 1 adds the webhook handler |
-| `089519c` | Agent 2 adds the signature verification middleware |
-| `71598b6` | Both merged, before any fixes. The valid request returns `400 EOF` |
-
-| Issue | Introduced in | Found with | Fixed in |
-|---|---|---|---|
-| `validateEventID` compiles its regular expression on every call. It's the top cost in the `BenchmarkHandler` CPU profile. | `b98784a`, measured at `c2aed50` | Profiling | `6d61d6c`: compile it once in a package-level `var` |
-| The handler returns `500` for any `Save` error, including `store.ErrDuplicate`. Two deliveries of the same event can both pass the `Get` check; the second `Save` fails and the provider keeps retrying. | `c2aed50` | Diff feedback: "return 200 for duplicates, or the provider retries forever" | `80be426`: return `200` for `ErrDuplicate`, and drop the `Get` check |
-| The handler decodes JSON straight from `r.Body` with no size limit. | `c2aed50` | Code Review | `6d1a177`: wrap the body in `http.MaxBytesReader`, in the handler and the middleware |
-| The middleware reads the body with `io.ReadAll` and doesn't put it back. After the merge, the valid request returns `400 EOF`, but `go test ./...` still passes because the middleware tests use a `next` handler that never reads the body. | `089519c`, visible at `71598b6` | Debugger | `f1f9324`: restore `r.Body` before calling `next` |
-| The middleware compares signatures with `==`, which isn't constant time. | `089519c` | Code Review | `41118f1`: decode the hex signature and compare with `hmac.Equal` |
-| The handler and middleware send raw Go errors to the client, such as JSON decode errors and `EOF`, and log nothing. | `c2aed50`, `089519c` | Code Review | `942e021`: log the error with `slog` and respond with a fixed message |
+| Issue | File | Fixed by |
+|---|---|---|
+| The event ID regex is compiled on every call. It's the top cost in the `BenchmarkHandler` CPU profile. | `internal/webhook/validate.go` | Profiling |
+| A duplicate delivery that races past the `Get` check gets `500`, so the provider retries forever. | `internal/webhook/handler.go` | Diff feedback on Agent 1 |
+| Signatures are compared with `==`, which isn't constant time. | `internal/middleware/signature.go` | Diff feedback on Agent 2, and Code Review |
+| Request bodies are read without `http.MaxBytesReader`. | `internal/webhook/handler.go`, `internal/middleware/signature.go` | Code Review |
+| The middleware discards the `io.ReadAll` error. | `internal/middleware/signature.go` | Code Review |
+| The middleware reads the body and doesn't put it back, so real requests fail with `400`. `go test ./...` still passes because the middleware test's `next` never reads the body. | `internal/middleware/signature.go`, `internal/middleware/signature_test.go` | Debugger |
+| Verification is hard-wired to one HMAC scheme and one secret, so adding a second provider means rewriting the middleware. | `internal/middleware/signature.go` | Refactoring |

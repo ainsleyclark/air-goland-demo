@@ -9,8 +9,6 @@ import (
 	"github.com/ainsleyclark/hookrelay/internal/store"
 )
 
-const maxBodyBytes = 1 << 20
-
 // Handler receives webhook events and saves them to a Store.
 type Handler struct {
 	store store.Store
@@ -27,15 +25,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var ev store.Event
-	body := http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
-	if err := json.NewDecoder(body).Decode(&ev); err != nil {
+	// ISSUE: 	The body is decoded with no size limit, so a client can send an arbitrarily large payload.
+	// FIX: 	Code Review Skill should flag the missing http.MaxBytesReader around r.Body.
+	if err := json.NewDecoder(r.Body).Decode(&ev); err != nil {
 		slog.WarnContext(ctx, "decoding webhook", "error", err)
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
-		} else {
-			http.Error(w, "invalid JSON body", http.StatusBadRequest)
-		}
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
 
@@ -45,14 +40,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ev.Provider = r.PathValue("provider")
 
-	err := h.store.Save(ctx, ev)
-	switch {
-	case errors.Is(err, store.ErrDuplicate):
+	_, err := h.store.Get(ctx, ev.ID)
+	if err == nil {
 		w.WriteHeader(http.StatusOK)
-	case err != nil:
+		return
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		slog.ErrorContext(ctx, "loading webhook", "id", ev.ID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// ISSUE: 	Two deliveries of one event can both pass the Get check, so the second Save returns ErrDuplicate and gets a 500.
+	// FIX: 	Diff feedback on Agent 1: "return 200 for duplicates, or the provider retries forever."
+	if err = h.store.Save(ctx, ev); err != nil {
 		slog.ErrorContext(ctx, "saving webhook", "id", ev.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
-	default:
-		w.WriteHeader(http.StatusAccepted)
+		return
 	}
+
+	w.WriteHeader(http.StatusAccepted)
 }
