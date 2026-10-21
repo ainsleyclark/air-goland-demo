@@ -1,4 +1,3 @@
-// Package middleware contains HTTP middleware for webhook routes.
 package middleware
 
 import (

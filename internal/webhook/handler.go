@@ -1,4 +1,3 @@
-// Package webhook receives payment provider webhooks.
 package webhook
 
 import (
@@ -25,6 +24,7 @@ func NewHandler(s store.Store) *Handler {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var ev store.Event
 	body := http.MaxBytesReader(w, r.Body, maxBodyBytes)
+
 	if err := json.NewDecoder(body).Decode(&ev); err != nil {
 		slog.WarnContext(r.Context(), "decoding webhook", "error", err)
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
@@ -34,6 +34,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
 	if err := validateEventID(ev.ID); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
