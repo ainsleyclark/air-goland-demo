@@ -54,10 +54,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ISSUE: 	Two deliveries of one event can both pass the Get check, so the second Save gets a 500 and the provider retries forever.
-	// DEMO: 	Air diff feedback on Agent 1: "return 200 for duplicates, or the provider retries forever."
-	// FIX: 	Return 200 when errors.Is(err, store.ErrDuplicate). See handler_fixed.go.
 	if err = h.store.Save(ctx, ev); err != nil {
+		if errors.Is(err, store.ErrDuplicate) {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		slog.ErrorContext(ctx, "saving webhook", "id", ev.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

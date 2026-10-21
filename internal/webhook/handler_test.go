@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +30,18 @@ func readEvent(t *testing.T, name string) []byte {
 	body, err := os.ReadFile(filepath.Join("testdata", "events", name))
 	require.NoError(t, err)
 	return body
+}
+
+// duplicateStore finds nothing on Get but reports every Save as a
+// duplicate, as if another delivery of the same event won the race.
+type duplicateStore struct{}
+
+func (duplicateStore) Get(context.Context, string) (store.Event, error) {
+	return store.Event{}, store.ErrNotFound
+}
+
+func (duplicateStore) Save(context.Context, store.Event) error {
+	return store.ErrDuplicate
 }
 
 func post(h http.Handler, body []byte) *httptest.ResponseRecorder {
@@ -62,6 +75,13 @@ func TestHandler_ServeHTTP(t *testing.T) {
 		require.Equal(t, http.StatusAccepted, post(h, body).Code)
 
 		rec := post(h, body)
+		assert.Equal(t, http.StatusOK, rec.Code)
+	})
+
+	t.Run("Racing duplicate acknowledged", func(t *testing.T) {
+		t.Parallel()
+
+		rec := post(NewHandler(duplicateStore{}), readEvent(t, "payment_succeeded.json"))
 		assert.Equal(t, http.StatusOK, rec.Code)
 	})
 
