@@ -79,13 +79,8 @@ func TestVerifySignature(t *testing.T) {
 			t.Parallel()
 
 			// ISSUE: 	next never reads the body, so these tests pass even though the real handler receives an empty one.
-			// FIX: 	Debugger Skill should make next read the body and check it arrives intact:
-			//
-			//	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-			//		read, err := io.ReadAll(r.Body)
-			//		require.NoError(t, err)
-			//		assert.Equal(t, test.body, string(read))
-			//	})
+			// DEMO: 	Debugger Skill
+			// FIX: 	Make next read the body and check it arrives intact. See signature_fixed_test.go.
 			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})

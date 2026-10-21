@@ -1,3 +1,5 @@
+//go:build !fixed
+
 package middleware
 
 import (
@@ -25,26 +27,13 @@ func VerifySignature(secret []byte, next http.Handler) http.Handler {
 		ctx := r.Context()
 
 		// ISSUE: 	The body is read with no size limit, and the read error is discarded.
-		// FIX: 	Code Review Skill should limit the body and check the error:
-		//
-		//	const maxBodyBytes = 1 << 20 // at package level
-		//
-		//	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
-		//	if err != nil {
-		//		slog.WarnContext(ctx, "reading webhook body", "error", err)
-		//		http.Error(w, "could not read request body", http.StatusBadRequest)
-		//		return
-		//	}
+		// DEMO: 	Code Review Skill
+		// FIX: 	Read from http.MaxBytesReader(w, r.Body, maxBodyBytes) and handle the error. See signature_fixed.go.
 		body, _ := io.ReadAll(r.Body)
 
 		// ISSUE: 	Verification is hard-wired to one HMAC scheme and one secret, so a second provider means rewriting this middleware.
-		// FIX: 	Refactoring Skill should pull verification behind an interface, turn verify into an HMACVerifier, and pass it in from main.go:
-		//
-		//	type Verifier interface {
-		//		Verify(header string, body []byte) error
-		//	}
-		//
-		//	func VerifySignature(v Verifier, next http.Handler) http.Handler
+		// DEMO: 	Refactoring Skill
+		// FIX: 	Put verification behind a Verifier interface, with HMACVerifier as the first implementation. See signature_fixed.go.
 		if err := verify(secret, r.Header.Get(SignatureHeader), body); err != nil {
 			slog.WarnContext(ctx, "rejected webhook signature", "error", err)
 			http.Error(w, "invalid signature", http.StatusUnauthorized)
@@ -52,9 +41,8 @@ func VerifySignature(secret []byte, next http.Handler) http.Handler {
 		}
 
 		// ISSUE: 	The body was read above and never put back, so the handler decodes an empty body and every real request fails with 400.
-		// FIX: 	Debugger Skill should trace the empty body from the handler back here and put the body back before calling next:
-		//
-		//	r.Body = io.NopCloser(bytes.NewReader(body))
+		// DEMO: 	Debugger Skill
+		// FIX: 	Put the body back with r.Body = io.NopCloser(bytes.NewReader(body)) before calling next. See signature_fixed.go.
 		next.ServeHTTP(w, r)
 	})
 }
@@ -74,10 +62,8 @@ func verify(secret []byte, header string, body []byte) error {
 	mac.Write(body)
 
 	// ISSUE: 	== isn't constant time, so response timing can leak how much of the signature matched.
-	// DEMO:	Code Review Skill
-	// FIX: 	Diff feedback on Agent 2: "use hmac.Equal, not ==." Code Review Skill should flag it too. Replace the comparison with:
-	//
-	//	if !hmac.Equal([]byte(sig), []byte(hex.EncodeToString(mac.Sum(nil)))) {
+	// DEMO: 	Code Review Skill
+	// FIX: 	Compare with hmac.Equal, as Agent 2's diff feedback says. See HMACVerifier.Verify in signature_fixed.go.
 	if sig != hex.EncodeToString(mac.Sum(nil)) {
 		return errors.New("signature mismatch")
 	}

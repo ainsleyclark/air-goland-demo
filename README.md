@@ -62,18 +62,30 @@ In GoLand, click the gutter icon next to `BenchmarkHandler` and choose **Profile
 
 ## Demo issues
 
-The code contains deliberate issues for the demo. Each one is marked with an `// ISSUE:` comment that describes it and a `// FIX:` comment that says what should fix it. List them with:
+The code contains deliberate issues for the demo. Each one is marked with three comments: `// ISSUE:` describes it, `// DEMO:` names the technology that finds it, and `// FIX:` says what to change. List them with:
 
 ```sh
-grep -rn "ISSUE:" --include='*.go' .
+grep -rn -A2 "ISSUE:" --include='*.go' .
 ```
 
-| Issue | File | Fixed by |
+| Issue | File | Demo |
 |---|---|---|
-| The event ID regex is compiled on every call. It's the top cost in the `BenchmarkHandler` CPU profile. | `internal/webhook/validate.go` | Profiling |
-| A duplicate delivery that races past the `Get` check gets `500`, so the provider retries forever. | `internal/webhook/handler.go` | Diff feedback on Agent 1 |
-| Signatures are compared with `==`, which isn't constant time. | `internal/middleware/signature.go` | Diff feedback on Agent 2, and Code Review |
-| Request bodies are read without `http.MaxBytesReader`. | `internal/webhook/handler.go`, `internal/middleware/signature.go` | Code Review |
-| The middleware discards the `io.ReadAll` error. | `internal/middleware/signature.go` | Code Review |
-| The middleware reads the body and doesn't put it back, so real requests fail with `400`. `go test ./...` still passes because the middleware test's `next` never reads the body. | `internal/middleware/signature.go`, `internal/middleware/signature_test.go` | Debugger |
-| Verification is hard-wired to one HMAC scheme and one secret, so adding a second provider means rewriting the middleware. | `internal/middleware/signature.go` | Refactoring |
+| The event ID regex is compiled on every call. It's the top cost in the `BenchmarkHandler` CPU profile. | `internal/webhook/validate.go` | Profiling Skill |
+| A duplicate delivery that races past the `Get` check gets `500`, so the provider retries forever. | `internal/webhook/handler.go` | Air diff feedback on Agent 1 |
+| Signatures are compared with `==`, which isn't constant time. | `internal/middleware/signature.go` | Code Review Skill |
+| Request bodies are read without `http.MaxBytesReader`. | `internal/webhook/handler.go`, `internal/middleware/signature.go` | Code Review Skill |
+| The middleware discards the `io.ReadAll` error. | `internal/middleware/signature.go` | Code Review Skill |
+| The middleware reads the body and doesn't put it back, so real requests fail with `400`. `go test ./...` still passes because the middleware test's `next` never reads the body. | `internal/middleware/signature.go`, `internal/middleware/signature_test.go` | Debugger Skill |
+| Verification is hard-wired to one HMAC scheme and one secret, so adding a second provider means rewriting the middleware. | `internal/middleware/signature.go` | Refactoring Skill |
+
+### Fixed versions
+
+Each file with issues has a `_fixed.go` twin that holds the solution. The two are swapped with the `fixed` build tag: a normal build uses the files with issues, and `-tags fixed` uses the twins and adds the `_fixed_test.go` tests, which check each fix.
+
+```sh
+go run -tags fixed .
+go test -tags fixed ./...
+go test -tags fixed -run '^$' -bench BenchmarkHandler -benchmem ./internal/webhook
+```
+
+To see a fix as a diff, compare a file with its twin, for example `internal/webhook/handler.go` with `internal/webhook/handler_fixed.go`. To work on the fixed code in GoLand, add `fixed` to the custom tags under **Settings | Go | Build Tags**.

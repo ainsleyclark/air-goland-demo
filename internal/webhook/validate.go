@@ -1,3 +1,5 @@
+//go:build !fixed
+
 package webhook
 
 import (
@@ -7,9 +9,8 @@ import (
 
 func validateEventID(id string) error {
 	// ISSUE: 	The regex is compiled on every handler call, increasing allocations.
-	// FIX: 	Benchmark Skill should move this line above validateEventID, to package level, so it's compiled once:
-	//
-	//	var eventIDPattern = regexp.MustCompile("^evt_[A-Za-z0-9]{24}$")
+	// DEMO: 	Profiling Skill
+	// FIX: 	Move eventIDPattern to package level so it's compiled once. See validate_fixed.go.
 	var eventIDPattern = regexp.MustCompile("^evt_[A-Za-z0-9]{24}$")
 
 	if !eventIDPattern.MatchString(id) {
