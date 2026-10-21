@@ -1,7 +1,7 @@
 # hookrelay
 
 A small Go service that receives signed payment webhooks and stores each event once.
-It's the demo project for a GoLand blog post about Air and the 2026.3 IDE skills, and it contains a few deliberate issues (see [Demo notes](#demo-notes)).
+It's the demo project for a GoLand blog post about Air and the 2026.3 IDE skills.
 
 Standard library only. Requires Go 1.27.3 or later.
 
@@ -20,7 +20,7 @@ WEBHOOK_SECRET=my-secret go run ./cmd/server
 
 ### Send requests from GoLand
 
-Open `requests/webhooks.http`, select the `dev` environment, and run the requests. On `final` you should see:
+Open `requests/webhooks.http`, select the `dev` environment, and run the requests:
 
 | Request | Expected response |
 |---|---|
@@ -37,6 +37,10 @@ Webhook-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">
 ```
 
 Requests with a timestamp older than five minutes are rejected.
+
+### Errors
+
+Error responses carry a short, fixed message such as `invalid JSON body` or `invalid signature`. The underlying error is logged with `log/slog` and never sent to the client. Bodies larger than 1 MiB get `413 Request Entity Too Large`.
 
 ## Run the tests
 
@@ -55,27 +59,26 @@ go tool pprof -top -cum cpu.out
 
 In GoLand, click the gutter icon next to `BenchmarkHandler` and choose **Profile with CPU Profiler**.
 
-## Branches
+## Demo history
 
-| Branch | Contents |
+The blog post walks through the history of `main`. Two agent commits add the handler and the middleware with deliberate issues, a merge brings them together, and later commits fix each issue. The code has no comments pointing at the issues.
+
+Run `git checkout <commit>` to go back to any of these states:
+
+| Commit | State |
 |---|---|
-| `main` | Baseline: store, `validateEventID`, and a route stub that returns `501` |
-| `agent-1` | The webhook handler |
-| `agent-2` | The signature verification middleware |
-| `merged` (tag) | `agent-1` and `agent-2` merged, before any fixes |
-| `final` | The merge plus every fix |
+| `b98784a` | Baseline: store, `validateEventID`, and a route stub that returns `501` |
+| `c2aed50` | Agent 1 adds the webhook handler |
+| `089519c` | Agent 2 adds the signature verification middleware |
+| `71598b6` | Both merged, before any fixes. The valid request returns `400 EOF` |
 
-## Demo notes
-
-These issues are deliberate. The code has no comments pointing at them.
-
-| Issue | Branch | Found with | Fix on `final` |
+| Issue | Introduced in | Found with | Fixed in |
 |---|---|---|---|
-| `validateEventID` compiles its regular expression on every call. It's the top cost in the `BenchmarkHandler` CPU profile. | `main`, measured on `agent-1` | Profiling | Compile it once in a package-level `var` |
-| The handler returns `500` for any `Save` error, including `store.ErrDuplicate`. Two deliveries of the same event can both pass the `Get` check; the second `Save` fails and the provider keeps retrying. | `agent-1` | Diff feedback: "return 200 for duplicates, or the provider retries forever" | Return `200` for `ErrDuplicate`, and drop the `Get` check |
-| The handler decodes JSON straight from `r.Body` with no size limit. | `agent-1` | Code Review | Wrap the body in `http.MaxBytesReader`, in the handler and the middleware |
-| The middleware reads the body with `io.ReadAll` and doesn't put it back. After the merge, the valid request returns `400 EOF`, but `go test ./...` still passes because the middleware tests use a `next` handler that never reads the body. | `agent-2`, visible at `merged` | Debugger | Restore `r.Body` before calling `next` |
-| The middleware compares signatures with `==`, which isn't constant time. | `agent-2` | Code Review | Decode the hex signature and compare with `hmac.Equal` |
-| The handler and middleware send raw Go errors to the client, such as JSON decode errors and `EOF`, and log nothing. | `agent-1`, `agent-2` | Code Review | Log the error with `slog` and respond with a fixed message, such as `invalid JSON body` or `invalid signature`. Oversized bodies get `413` |
+| `validateEventID` compiles its regular expression on every call. It's the top cost in the `BenchmarkHandler` CPU profile. | `b98784a`, measured at `c2aed50` | Profiling | `6d61d6c`: compile it once in a package-level `var` |
+| The handler returns `500` for any `Save` error, including `store.ErrDuplicate`. Two deliveries of the same event can both pass the `Get` check; the second `Save` fails and the provider keeps retrying. | `c2aed50` | Diff feedback: "return 200 for duplicates, or the provider retries forever" | `80be426`: return `200` for `ErrDuplicate`, and drop the `Get` check |
+| The handler decodes JSON straight from `r.Body` with no size limit. | `c2aed50` | Code Review | `6d1a177`: wrap the body in `http.MaxBytesReader`, in the handler and the middleware |
+| The middleware reads the body with `io.ReadAll` and doesn't put it back. After the merge, the valid request returns `400 EOF`, but `go test ./...` still passes because the middleware tests use a `next` handler that never reads the body. | `089519c`, visible at `71598b6` | Debugger | `f1f9324`: restore `r.Body` before calling `next` |
+| The middleware compares signatures with `==`, which isn't constant time. | `089519c` | Code Review | `41118f1`: decode the hex signature and compare with `hmac.Equal` |
+| The handler and middleware send raw Go errors to the client, such as JSON decode errors and `EOF`, and log nothing. | `c2aed50`, `089519c` | Code Review | `942e021`: log the error with `slog` and respond with a fixed message |
 
-`final` also moves signature checking behind a `Verifier` interface with one HMAC implementation, adds an end-to-end test that posts a signed event twice through the middleware, and is clean under `go test -race ./...` and `go vet ./...`.
+After the fixes, `fb6935c` moves signature checking behind a `Verifier` interface with one HMAC implementation, and `b56c2dc` adds an end-to-end test that posts a signed event twice through the middleware.
