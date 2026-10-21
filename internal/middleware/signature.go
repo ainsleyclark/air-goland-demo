@@ -31,7 +31,7 @@ func VerifySignature(secret []byte, next http.Handler) http.Handler {
 		// FIX: 	Read from http.MaxBytesReader(w, r.Body, maxBodyBytes) and handle the error. See signature_fixed.go.
 		body, _ := io.ReadAll(r.Body)
 
-		// ISSUE: 	verify only checks one HMAC scheme but its name doesn't say so, so a second provider's scheme has no obvious home.
+		// ISSUE: 	Verify only checks one HMAC scheme but its name doesn't say so, so a second provider's scheme has no obvious home.
 		// DEMO: 	Refactoring Skill
 		// FIX: 	Rename verify to verifyHMAC. This one is left to the skill, so it's not in signature_fixed.go.
 		if err := verify(secret, r.Header.Get(SignatureHeader), body); err != nil {
