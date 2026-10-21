@@ -13,10 +13,12 @@ import (
 	"github.com/ainsleyclark/hookrelay/internal/store"
 )
 
-// duplicateStore reports every Save as a duplicate, as if another delivery
-// of the same event had just been saved.
-type duplicateStore struct {
-	store.Store
+// duplicateStore finds nothing on Get but reports every Save as a
+// duplicate, as if another delivery of the same event won the race.
+type duplicateStore struct{}
+
+func (duplicateStore) Get(context.Context, string) (store.Event, error) {
+	return store.Event{}, store.ErrNotFound
 }
 
 func (duplicateStore) Save(context.Context, store.Event) error {
@@ -38,6 +40,7 @@ func TestHandler_ServeHTTP_Fixed(t *testing.T) {
 
 		h, _ := setup(t)
 		rec := post(h, []byte(`{"id": "`+strings.Repeat("a", maxBodyBytes)+`"}`))
-		assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.Equal(t, "invalid JSON body", strings.TrimSpace(rec.Body.String()))
 	})
 }

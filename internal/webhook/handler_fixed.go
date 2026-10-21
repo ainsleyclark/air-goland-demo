@@ -29,15 +29,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var ev store.Event
-	body := http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
+	body := http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	if err := json.NewDecoder(body).Decode(&ev); err != nil {
 		slog.WarnContext(ctx, "decoding webhook", "error", err)
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
-		} else {
-			http.Error(w, "invalid JSON body", http.StatusBadRequest)
-		}
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
 
@@ -47,14 +43,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ev.Provider = r.PathValue("provider")
 
-	err := h.store.Save(ctx, ev)
-	switch {
-	case errors.Is(err, store.ErrDuplicate):
+	_, err := h.store.Get(ctx, ev.ID)
+	if err == nil {
 		w.WriteHeader(http.StatusOK)
-	case err != nil:
+		return
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		slog.ErrorContext(ctx, "loading webhook", "id", ev.ID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if err = h.store.Save(ctx, ev); err != nil {
+		if errors.Is(err, store.ErrDuplicate) {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		slog.ErrorContext(ctx, "saving webhook", "id", ev.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
-	default:
-		w.WriteHeader(http.StatusAccepted)
+		return
 	}
+
+	w.WriteHeader(http.StatusAccepted)
 }

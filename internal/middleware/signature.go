@@ -33,7 +33,7 @@ func VerifySignature(secret []byte, next http.Handler) http.Handler {
 
 		// ISSUE: 	Verification is hard-wired to one HMAC scheme and one secret, so a second provider means rewriting this middleware.
 		// DEMO: 	Refactoring Skill
-		// FIX: 	Put verification behind a Verifier interface, with HMACVerifier as the first implementation. See signature_fixed.go.
+		// FIX: 	Put verify behind a Verifier interface with an HMAC implementation. This one is left to the skill, so it's not in signature_fixed.go.
 		if err := verify(secret, r.Header.Get(SignatureHeader), body); err != nil {
 			slog.WarnContext(ctx, "rejected webhook signature", "error", err)
 			http.Error(w, "invalid signature", http.StatusUnauthorized)
@@ -63,7 +63,7 @@ func verify(secret []byte, header string, body []byte) error {
 
 	// ISSUE: 	== isn't constant time, so response timing can leak how much of the signature matched.
 	// DEMO: 	Code Review Skill
-	// FIX: 	Compare with hmac.Equal, as Agent 2's diff feedback says. See HMACVerifier.Verify in signature_fixed.go.
+	// FIX: 	Compare with hmac.Equal, as Agent 2's diff feedback says. See signature_fixed.go.
 	if sig != hex.EncodeToString(mac.Sum(nil)) {
 		return errors.New("signature mismatch")
 	}

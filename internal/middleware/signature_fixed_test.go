@@ -46,6 +46,7 @@ func TestVerifySignature_Fixed(t *testing.T) {
 
 		VerifySignature(testSecret, http.NotFoundHandler()).ServeHTTP(rec, req)
 
-		assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.Equal(t, "could not read request body", strings.TrimSpace(rec.Body.String()))
 	})
 }

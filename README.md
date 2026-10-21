@@ -80,7 +80,7 @@ grep -rn -A2 "ISSUE:" --include='*.go' .
 
 ### Fixed versions
 
-Each file with issues has a `_fixed.go` twin that holds the solution. The two are swapped with the `fixed` build tag: a normal build uses the files with issues, and `-tags fixed` uses the twins and adds the `_fixed_test.go` tests, which check each fix.
+Each file with issues has a `_fixed.go` twin: the same file with the markers removed and the fixes applied, and nothing else changed. The Refactoring issue is the exception, because it's a design change left to the skill. The two are swapped with the `fixed` build tag: a normal build uses the files with issues, and `-tags fixed` uses the twins and adds the `_fixed_test.go` tests, which check each fix.
 
 ```sh
 go run -tags fixed .
