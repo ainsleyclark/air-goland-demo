@@ -31,19 +31,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ev.Provider = r.PathValue("provider")
 
-	_, err := h.store.Get(r.Context(), ev.ID)
-	if err == nil {
+	err := h.store.Save(r.Context(), ev)
+	switch {
+	case errors.Is(err, store.ErrDuplicate):
 		w.WriteHeader(http.StatusOK)
-		return
-	}
-	if !errors.Is(err, store.ErrNotFound) {
+	case err != nil:
 		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+	default:
+		w.WriteHeader(http.StatusAccepted)
 	}
-
-	if err := h.store.Save(r.Context(), ev); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusAccepted)
 }
