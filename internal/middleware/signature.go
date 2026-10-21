@@ -40,7 +40,7 @@ func VerifySignature(secret []byte, next http.Handler) http.Handler {
 			http.Error(w, "signature expired", http.StatusUnauthorized)
 			return
 		}
-		if sig != sign(secret, ts, body) {
+		if !hmac.Equal(sig, sign(secret, ts, body)) {
 			http.Error(w, "invalid signature", http.StatusUnauthorized)
 			return
 		}
@@ -49,27 +49,29 @@ func VerifySignature(secret []byte, next http.Handler) http.Handler {
 	})
 }
 
-func sign(secret []byte, ts int64, body []byte) string {
+func sign(secret []byte, ts int64, body []byte) []byte {
 	mac := hmac.New(sha256.New, secret)
 	mac.Write([]byte(strconv.FormatInt(ts, 10) + "."))
 	mac.Write(body)
-	return hex.EncodeToString(mac.Sum(nil))
+	return mac.Sum(nil)
 }
 
-func parseHeader(header string) (ts int64, sig string, err error) {
+func parseHeader(header string) (ts int64, sig []byte, err error) {
 	for part := range strings.SplitSeq(header, ",") {
 		key, value, _ := strings.Cut(strings.TrimSpace(part), "=")
 		switch key {
 		case "t":
 			if ts, err = strconv.ParseInt(value, 10, 64); err != nil {
-				return 0, "", errMalformedHeader
+				return 0, nil, errMalformedHeader
 			}
 		case "v1":
-			sig = value
+			if sig, err = hex.DecodeString(value); err != nil {
+				return 0, nil, errMalformedHeader
+			}
 		}
 	}
-	if ts == 0 || sig == "" {
-		return 0, "", errMalformedHeader
+	if ts == 0 || len(sig) == 0 {
+		return 0, nil, errMalformedHeader
 	}
 	return ts, sig, nil
 }
