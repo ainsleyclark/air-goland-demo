@@ -1,0 +1,1 @@
+{"id": "evt_123", "type": "payment.succeeded", "data": {"amount": 2500, "currency": "gbp"}}
