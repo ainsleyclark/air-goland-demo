@@ -4,6 +4,7 @@ package webhook
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/ainsleyclark/hookrelay/internal/store"
@@ -25,7 +26,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var ev store.Event
 	body := http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	if err := json.NewDecoder(body).Decode(&ev); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		slog.WarnContext(r.Context(), "decoding webhook", "error", err)
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		} else {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		}
 		return
 	}
 	if err := validateEventID(ev.ID); err != nil {
@@ -39,6 +45,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrDuplicate):
 		w.WriteHeader(http.StatusOK)
 	case err != nil:
+		slog.ErrorContext(r.Context(), "saving webhook", "id", ev.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 	default:
 		w.WriteHeader(http.StatusAccepted)

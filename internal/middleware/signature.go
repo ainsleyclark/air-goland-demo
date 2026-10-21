@@ -3,7 +3,9 @@ package middleware
 
 import (
 	"bytes"
+	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 )
 
@@ -23,11 +25,17 @@ func VerifySignature(v Verifier, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			slog.WarnContext(r.Context(), "reading webhook body", "error", err)
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			} else {
+				http.Error(w, "could not read request body", http.StatusBadRequest)
+			}
 			return
 		}
 		if err := v.Verify(r.Header.Get(SignatureHeader), body); err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
+			slog.WarnContext(r.Context(), "rejected webhook signature", "error", err)
+			http.Error(w, "invalid signature", http.StatusUnauthorized)
 			return
 		}
 

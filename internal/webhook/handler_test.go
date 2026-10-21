@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ainsleyclark/hookrelay/internal/store"
@@ -60,6 +61,34 @@ func TestHandler_InvalidID(t *testing.T) {
 	rec := post(NewHandler(store.NewMemory()), readEvent(t, "invalid_id.json"))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandler_BadBody(t *testing.T) {
+	huge := `{"id": "` + strings.Repeat("a", maxBodyBytes) + `"}`
+
+	tests := []struct {
+		name string
+		body string
+		code int
+		msg  string
+	}{
+		{"malformed", `{"id":`, http.StatusBadRequest, "invalid JSON body"},
+		{"empty", "", http.StatusBadRequest, "invalid JSON body"},
+		{"too large", huge, http.StatusRequestEntityTooLarge, "request body too large"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := post(NewHandler(store.NewMemory()), []byte(tt.body))
+
+			if rec.Code != tt.code {
+				t.Errorf("status = %d, want %d", rec.Code, tt.code)
+			}
+			if got := strings.TrimSpace(rec.Body.String()); got != tt.msg {
+				t.Errorf("body = %q, want %q", got, tt.msg)
+			}
+		})
 	}
 }
 

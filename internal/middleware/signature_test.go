@@ -23,21 +23,26 @@ func signHeader(secret []byte, ts int64, body string) string {
 }
 
 func TestVerifySignature(t *testing.T) {
-	const body = `{"id": "evt_1A2b3C4d5E6f7G8h9I0jK1lM", "type": "payment.succeeded"}`
+	const (
+		body     = `{"id": "evt_1A2b3C4d5E6f7G8h9I0jK1lM", "type": "payment.succeeded"}`
+		rejected = "invalid signature"
+	)
 	now := time.Now().Unix()
 
 	tests := []struct {
 		name   string
 		header string
 		body   string
-		want   int
+		code   int
+		msg    string
 	}{
-		{"valid", signHeader(testSecret, now, body), body, http.StatusOK},
-		{"tampered body", signHeader(testSecret, now, body), body + " ", http.StatusUnauthorized},
-		{"wrong secret", signHeader([]byte("other"), now, body), body, http.StatusUnauthorized},
-		{"expired", signHeader(testSecret, now-600, body), body, http.StatusUnauthorized},
-		{"malformed header", "v1=abc", body, http.StatusUnauthorized},
-		{"missing header", "", body, http.StatusUnauthorized},
+		{"valid", signHeader(testSecret, now, body), body, http.StatusOK, ""},
+		{"tampered body", signHeader(testSecret, now, body), body + " ", http.StatusUnauthorized, rejected},
+		{"wrong secret", signHeader([]byte("other"), now, body), body, http.StatusUnauthorized, rejected},
+		{"expired", signHeader(testSecret, now-600, body), body, http.StatusUnauthorized, rejected},
+		{"malformed header", "v1=abc", body, http.StatusUnauthorized, rejected},
+		{"missing header", "", body, http.StatusUnauthorized, rejected},
+		{"too large", "", strings.Repeat("a", maxBodyBytes+1), http.StatusRequestEntityTooLarge, "request body too large"},
 	}
 
 	for _, tt := range tests {
@@ -52,10 +57,13 @@ func TestVerifySignature(t *testing.T) {
 
 			VerifySignature(HMACVerifier{Secret: testSecret}, next).ServeHTTP(rec, req)
 
-			if rec.Code != tt.want {
-				t.Errorf("status = %d, want %d", rec.Code, tt.want)
+			if rec.Code != tt.code {
+				t.Errorf("status = %d, want %d", rec.Code, tt.code)
 			}
-			if tt.want == http.StatusOK && string(got) != tt.body {
+			if msg := strings.TrimSpace(rec.Body.String()); msg != tt.msg {
+				t.Errorf("response = %q, want %q", msg, tt.msg)
+			}
+			if tt.code == http.StatusOK && string(got) != tt.body {
 				t.Errorf("next read body %q, want %q", got, tt.body)
 			}
 		})
