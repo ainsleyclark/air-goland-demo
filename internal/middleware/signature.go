@@ -25,11 +25,26 @@ func VerifySignature(secret []byte, next http.Handler) http.Handler {
 		ctx := r.Context()
 
 		// ISSUE: 	The body is read with no size limit, and the read error is discarded.
-		// FIX: 	Code Review Skill should flag the missing http.MaxBytesReader and the unchecked error.
+		// FIX: 	Code Review Skill should limit the body and check the error:
+		//
+		//	const maxBodyBytes = 1 << 20 // at package level
+		//
+		//	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+		//	if err != nil {
+		//		slog.WarnContext(ctx, "reading webhook body", "error", err)
+		//		http.Error(w, "could not read request body", http.StatusBadRequest)
+		//		return
+		//	}
 		body, _ := io.ReadAll(r.Body)
 
 		// ISSUE: 	Verification is hard-wired to one HMAC scheme and one secret, so a second provider means rewriting this middleware.
-		// FIX: 	Refactoring Skill should pull verification behind a Verifier interface with one HMAC implementation.
+		// FIX: 	Refactoring Skill should pull verification behind an interface, turn verify into an HMACVerifier, and pass it in from main.go:
+		//
+		//	type Verifier interface {
+		//		Verify(header string, body []byte) error
+		//	}
+		//
+		//	func VerifySignature(v Verifier, next http.Handler) http.Handler
 		if err := verify(secret, r.Header.Get(SignatureHeader), body); err != nil {
 			slog.WarnContext(ctx, "rejected webhook signature", "error", err)
 			http.Error(w, "invalid signature", http.StatusUnauthorized)
@@ -37,7 +52,9 @@ func VerifySignature(secret []byte, next http.Handler) http.Handler {
 		}
 
 		// ISSUE: 	The body was read above and never put back, so the handler decodes an empty body and every real request fails with 400.
-		// FIX: 	Debugger Skill should trace the empty body from the handler back here and restore r.Body with io.NopCloser(bytes.NewReader(body)).
+		// FIX: 	Debugger Skill should trace the empty body from the handler back here and put the body back before calling next:
+		//
+		//	r.Body = io.NopCloser(bytes.NewReader(body))
 		next.ServeHTTP(w, r)
 	})
 }
@@ -57,7 +74,10 @@ func verify(secret []byte, header string, body []byte) error {
 	mac.Write(body)
 
 	// ISSUE: 	== isn't constant time, so response timing can leak how much of the signature matched.
-	// FIX: 	Diff feedback on Agent 2: "use hmac.Equal, not ==." Code Review Skill should flag it too.
+	// DEMO:	Code Review Skill
+	// FIX: 	Diff feedback on Agent 2: "use hmac.Equal, not ==." Code Review Skill should flag it too. Replace the comparison with:
+	//
+	//	if !hmac.Equal([]byte(sig), []byte(hex.EncodeToString(mac.Sum(nil)))) {
 	if sig != hex.EncodeToString(mac.Sum(nil)) {
 		return errors.New("signature mismatch")
 	}

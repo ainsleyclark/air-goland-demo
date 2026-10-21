@@ -27,7 +27,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var ev store.Event
 
 	// ISSUE: 	The body is decoded with no size limit, so a client can send an arbitrarily large payload.
-	// FIX: 	Code Review Skill should flag the missing http.MaxBytesReader around r.Body.
+	// FIX: 	Code Review Skill should add a size limit and decode through http.MaxBytesReader:
+	//
+	//	const maxBodyBytes = 1 << 20 // at package level
+	//
+	//	body := http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	//	if err := json.NewDecoder(body).Decode(&ev); err != nil {
 	if err := json.NewDecoder(r.Body).Decode(&ev); err != nil {
 		slog.WarnContext(ctx, "decoding webhook", "error", err)
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -52,7 +57,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ISSUE: 	Two deliveries of one event can both pass the Get check, so the second Save returns ErrDuplicate and gets a 500.
-	// FIX: 	Diff feedback on Agent 1: "return 200 for duplicates, or the provider retries forever."
+	// FIX: 	Diff feedback on Agent 1: "return 200 for duplicates, or the provider retries forever." Add this at the top of the error branch below:
+	//
+	//	if errors.Is(err, store.ErrDuplicate) {
+	//		w.WriteHeader(http.StatusOK)
+	//		return
+	//	}
 	if err = h.store.Save(ctx, ev); err != nil {
 		slog.ErrorContext(ctx, "saving webhook", "id", ev.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
