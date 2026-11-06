@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var testSecret = []byte("test-secret")
@@ -23,75 +25,39 @@ func signHeader(secret []byte, ts int64, body string) string {
 	return "t=" + t + ",v1=" + hex.EncodeToString(mac.Sum(nil))
 }
 
-func TestVerifySignature(t *testing.T) {
+func TestVerifySignature_Fixed(t *testing.T) {
 	t.Parallel()
 
-	const (
-		body     = `{"id": "evt_1A2b3C4d5E6f7G8h9I0jK1lM", "type": "payment.succeeded"}`
-		rejected = "invalid signature"
-	)
-	now := time.Now().Unix()
+	const body = `{"id": "evt_1A2b3C4d5E6f7G8h9I0jK1lM", "type": "payment.succeeded"}`
 
-	type response struct {
-		code int
-		msg  string
-	}
+	t.Run("Body reaches next intact", func(t *testing.T) {
+		t.Parallel()
 
-	tt := map[string]struct {
-		header string
-		body   string
-		want   response
-	}{
-		"Valid signature": {
-			header: signHeader(testSecret, now, body),
-			body:   body,
-			want:   response{code: http.StatusOK},
-		},
-		"Tampered body": {
-			header: signHeader(testSecret, now, body),
-			body:   body + " ",
-			want:   response{code: http.StatusUnauthorized, msg: rejected},
-		},
-		"Wrong secret": {
-			header: signHeader([]byte("other"), now, body),
-			body:   body,
-			want:   response{code: http.StatusUnauthorized, msg: rejected},
-		},
-		"Expired timestamp": {
-			header: signHeader(testSecret, now-600, body),
-			body:   body,
-			want:   response{code: http.StatusUnauthorized, msg: rejected},
-		},
-		"Malformed header": {
-			header: "v1=abc",
-			body:   body,
-			want:   response{code: http.StatusUnauthorized, msg: rejected},
-		},
-		"Missing header": {
-			header: "",
-			body:   body,
-			want:   response{code: http.StatusUnauthorized, msg: rejected},
-		},
-	}
-
-	for name, test := range tt {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			// ISSUE: 	next never reads the body, so these tests pass even though the real handler receives an empty one.
-			// DEMO: 	Debugger Skill
-			// FIX: 	Make next read the body and check it arrives intact. See signature_fixed_test.go.
-			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusOK)
-			})
-			req := httptest.NewRequest(http.MethodPost, "/webhooks/stripe", strings.NewReader(test.body))
-			req.Header.Set(SignatureHeader, test.header)
-			rec := httptest.NewRecorder()
-
-			VerifySignature(testSecret, next).ServeHTTP(rec, req)
-
-			got := response{code: rec.Code, msg: strings.TrimSpace(rec.Body.String())}
-			assert.Equal(t, test.want, got)
+		var got string
+		next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			read, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			got = string(read)
 		})
-	}
+		req := httptest.NewRequest(http.MethodPost, "/webhooks/stripe", strings.NewReader(body))
+		req.Header.Set(SignatureHeader, signHeader(testSecret, time.Now().Unix(), body))
+		rec := httptest.NewRecorder()
+
+		VerifySignature(testSecret, next).ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, body, got)
+	})
+
+	t.Run("Body too large", func(t *testing.T) {
+		t.Parallel()
+
+		req := httptest.NewRequest(http.MethodPost, "/webhooks/stripe", strings.NewReader(strings.Repeat("a", maxBodyBytes+1)))
+		rec := httptest.NewRecorder()
+
+		VerifySignature(testSecret, http.NotFoundHandler()).ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.Equal(t, "could not read request body", strings.TrimSpace(rec.Body.String()))
+	})
 }

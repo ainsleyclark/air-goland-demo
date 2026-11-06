@@ -1,8 +1,7 @@
-//go:build !fixed
-
 package middleware
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -20,29 +19,28 @@ const SignatureHeader = "Webhook-Signature"
 
 const tolerance = 5 * time.Minute
 
+const maxBodyBytes = 1 << 20
+
 // VerifySignature rejects requests that aren't signed with secret or are
 // more than five minutes old.
 func VerifySignature(secret []byte, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		// ISSUE: 	The body is read with no size limit, and the read error is discarded.
-		// DEMO: 	Code Review Skill
-		// FIX: 	Read from http.MaxBytesReader(w, r.Body, maxBodyBytes) and handle the error. See signature_fixed.go.
-		body, _ := io.ReadAll(r.Body)
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+		if err != nil {
+			slog.WarnContext(ctx, "reading webhook body", "error", err)
+			http.Error(w, "could not read request body", http.StatusBadRequest)
+			return
+		}
 
-		// ISSUE: 	Verify only checks one HMAC scheme but its name doesn't say so, so a second provider's scheme has no obvious home.
-		// DEMO: 	Refactoring Skill
-		// FIX: 	Rename verify to verifyHMAC. This one is left to the skill, so it's not in signature_fixed.go.
 		if err := verify(secret, r.Header.Get(SignatureHeader), body); err != nil {
 			slog.WarnContext(ctx, "rejected webhook signature", "error", err)
 			http.Error(w, "invalid signature", http.StatusUnauthorized)
 			return
 		}
 
-		// ISSUE: 	The body was read above and never put back, so the handler decodes an empty body and every real request fails with 400.
-		// DEMO: 	Debugger Skill
-		// FIX: 	Put the body back with r.Body = io.NopCloser(bytes.NewReader(body)) before calling next. See signature_fixed.go.
+		r.Body = io.NopCloser(bytes.NewReader(body))
 		next.ServeHTTP(w, r)
 	})
 }

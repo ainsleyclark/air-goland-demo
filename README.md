@@ -95,4 +95,4 @@ go test -tags fixed ./...
 go test -tags fixed -run '^$' -bench BenchmarkHandler -benchmem ./internal/webhook
 ```
 
-To see a fix as a diff, compare a file with its twin, for example `internal/webhook/handler.go` with `internal/webhook/handler_fixed.go`. To work on the fixed code in GoLand, add `fixed` to the custom tags under **Settings | Go | Build Tags**.
+To see a fix as a diff, compare a file with its twin, for example `internal/webhook/handler.go` with `internal/webhook/handler.go`. To work on the fixed code in GoLand, add `fixed` to the custom tags under **Settings | Go | Build Tags**.
