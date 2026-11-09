@@ -21,7 +21,8 @@ func NewHandler(s store.Store) *Handler {
 // ServeHTTP decodes the event in the request body and saves it.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var ev store.Event
-	if err := json.NewDecoder(r.Body).Decode(&ev); err != nil {
+	err := json.NewDecoder(r.Body).Decode(&ev)
+	if err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
@@ -31,7 +32,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.Save(r.Context(), ev); err != nil {
+	if err = h.store.Save(r.Context(), ev); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
