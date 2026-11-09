@@ -66,7 +66,7 @@ The Air part of the demo runs two agents in parallel. Each builds one piece of t
 
 | Agent | Builds | Files |
 |---|---|---|
-| Agent 1 | The webhook handler. It decodes the event from the request body, validates its ID, and saves it once. A new event gets `202 Accepted`, and a redelivery gets `200 OK`, including one that loses a race to save. | `internal/webhook/handler.go`, `internal/webhook/handler_test.go` |
+| Agent 1 | The webhook handler. It decodes the event from the request body, validates its ID, and saves it once. A new event gets `202 Accepted`, and a redelivery gets `200 OK`, including one that loses a race to save. | `requests/handler_old.txt`, `internal/webhook/handler_test.go` |
 | Agent 2 | The signature middleware. It checks the `Webhook-Signature` header against an HMAC-SHA256 of `<t>.<body>`, compares the two in constant time with `hmac.Equal`, and rejects timestamps older than five minutes. Rejected requests get `401 Unauthorized`. It also wraps the webhook route in `main.go`. | `internal/middleware/signature.go`, `internal/middleware/signature_test.go`, `main.go` |
 
 ## Demo issues
@@ -80,7 +80,7 @@ grep -rn -A2 "ISSUE:" --include='*.go' .
 | Issue | File | Demo |
 |---|---|---|
 | The event ID regex is compiled on every call. It's the top cost in the `BenchmarkHandler` CPU profile. | `internal/webhook/validate.go` | Profiling Skill |
-| Request bodies are read without `http.MaxBytesReader`. | `internal/webhook/handler.go`, `internal/middleware/signature.go` | Code Review Skill |
+| Request bodies are read without `http.MaxBytesReader`. | `requests/handler_old.txt`, `internal/middleware/signature.go` | Code Review Skill |
 | The middleware discards the `io.ReadAll` error. | `internal/middleware/signature.go` | Code Review Skill |
 | The middleware reads the body and doesn't put it back, so real requests fail with `400`. `go test ./...` still passes because the middleware test's `next` never reads the body. | `internal/middleware/signature.go`, `internal/middleware/signature_test.go` | Debugger Skill |
 | `verify` only checks one HMAC scheme but its name doesn't say so, so a second provider's scheme has no obvious home. | `internal/middleware/signature.go` | Refactoring Skill |
@@ -95,4 +95,4 @@ go test -tags fixed ./...
 go test -tags fixed -run '^$' -bench BenchmarkHandler -benchmem ./internal/webhook
 ```
 
-To see a fix as a diff, compare a file with its twin, for example `internal/webhook/handler.go` with `internal/webhook/handler.go`. To work on the fixed code in GoLand, add `fixed` to the custom tags under **Settings | Go | Build Tags**.
+To see a fix as a diff, compare a file with its twin, for example `requests/handler_old.txt` with `requests/handler_old.txt`. To work on the fixed code in GoLand, add `fixed` to the custom tags under **Settings | Go | Build Tags**.

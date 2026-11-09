@@ -8,7 +8,7 @@ import (
 
 	"github.com/ainsleyclark/hookrelay/internal/middleware"
 	"github.com/ainsleyclark/hookrelay/internal/store"
-	"github.com/ainsleyclark/hookrelay/internal/webhook"
+	"github.com/ainsleyclark/hookrelay/requests"
 )
 
 const devSecret = "dev-secret"
@@ -32,6 +32,6 @@ func main() {
 
 func routes(st store.Store, secret []byte) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("POST /webhooks/{provider}", middleware.VerifySignature(secret, webhook.NewHandler(st)))
+	mux.Handle("POST /webhooks/{provider}", middleware.VerifySignature(secret, requests.NewHandler(st)))
 	return mux
 }
