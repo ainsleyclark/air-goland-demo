@@ -15,6 +15,7 @@ func BenchmarkHandler(b *testing.B) {
 	for b.Loop() {
 		i++
 		body := fmt.Sprintf(`{"id":"evt_%020d","type":"payment.succeeded"}`, i)
-		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/", strings.NewReader(body)))
+		req := httptest.NewRequest("POST", "/", strings.NewReader(body))
+		h.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
